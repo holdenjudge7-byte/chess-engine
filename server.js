@@ -53,9 +53,9 @@ app.get('/api/eval', (req, res) => {
 
   engine.postMessage('stop');
   engine.postMessage('uci');
-  engine.postMessage('setoption name MultiPV value 3');
+  engine.postMessage('setoption name MultiPV value 1');
   engine.postMessage('position fen ' + fen);
-  engine.postMessage('go movetime 1000');
+  engine.postMessage('go movetime 500');
 });
 
 app.listen(process.env.PORT || 3000);
