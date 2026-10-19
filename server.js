@@ -23,7 +23,6 @@ engine.onmessage = (line) => {
       
       if (scoreMatch[1] === 'mate') evalScore = evalScore > 0 ? 100 : -100;
       else evalScore = evalScore / 100;
-      if (fen.includes(' b ')) evalScore = -evalScore;
 
       variants[idx] = {
         move: pvMatch[1].split(' ')[0],
@@ -42,7 +41,6 @@ app.get('/api/eval', (req, res) => {
   const fen = req.query.fen;
   if (!fen) return res.status(400).json({ error: 'No FEN' });
 
-  // Read the requested number of arrows (default to 1)
   const multipv = parseInt(req.query.multipv) || 1;
 
   if (activeResponse) {
@@ -57,9 +55,7 @@ app.get('/api/eval', (req, res) => {
   engine.postMessage('uci');
   engine.postMessage(`setoption name MultiPV value ${multipv}`);
   engine.postMessage('position fen ' + fen);
-  
-  // 150ms gives it enough time to find 3 moves while staying lightning fast
-  engine.postMessage('go movetime 150'); 
+  engine.postMessage('go movetime 100'); 
 });
 
 app.listen(process.env.PORT || 3000);
