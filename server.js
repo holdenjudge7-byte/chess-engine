@@ -23,6 +23,7 @@ engine.onmessage = (line) => {
       
       if (scoreMatch[1] === 'mate') evalScore = evalScore > 0 ? 100 : -100;
       else evalScore = evalScore / 100;
+      if (fen.includes(' b ')) evalScore = -evalScore;
 
       variants[idx] = {
         move: pvMatch[1].split(' ')[0],
