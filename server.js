@@ -5,7 +5,6 @@ const stockfish = require('stockfish');
 const app = express();
 app.use(cors());
 
-// Create ONE global engine that stays in memory (Fixes the 502 crash)
 const engine = stockfish();
 let activeResponse = null;
 let variants = {};
@@ -34,7 +33,7 @@ engine.onmessage = (line) => {
   else if (line.startsWith('bestmove')) {
     const cleanVariants = Object.values(variants).filter(v => v);
     activeResponse.json({ variants: cleanVariants });
-    activeResponse = null; // Unlock the engine for the next move
+    activeResponse = null; 
   }
 };
 
@@ -42,7 +41,9 @@ app.get('/api/eval', (req, res) => {
   const fen = req.query.fen;
   if (!fen) return res.status(400).json({ error: 'No FEN' });
 
-  // If a new move comes in while the engine is still thinking, abort the old one
+  // Read the requested number of arrows (default to 1)
+  const multipv = parseInt(req.query.multipv) || 1;
+
   if (activeResponse) {
     engine.postMessage('stop');
     activeResponse.status(503).json({ error: 'Aborted' });
@@ -53,9 +54,11 @@ app.get('/api/eval', (req, res) => {
 
   engine.postMessage('stop');
   engine.postMessage('uci');
-  engine.postMessage('setoption name MultiPV value 1');
+  engine.postMessage(`setoption name MultiPV value ${multipv}`);
   engine.postMessage('position fen ' + fen);
-  engine.postMessage('go movetime 100');
+  
+  // 150ms gives it enough time to find 3 moves while staying lightning fast
+  engine.postMessage('go movetime 150'); 
 });
 
 app.listen(process.env.PORT || 3000);
