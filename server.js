@@ -42,6 +42,7 @@ app.get('/api/eval', (req, res) => {
   if (!fen) return res.status(400).json({ error: 'No FEN' });
 
   const multipv = parseInt(req.query.multipv) || 1;
+  const targetElo = parseInt(req.query.elo) || 2800; // Default to max strength
 
   if (activeResponse) {
     engine.postMessage('stop');
@@ -53,9 +54,19 @@ app.get('/api/eval', (req, res) => {
 
   engine.postMessage('stop');
   engine.postMessage('uci');
+  
+  if (targetElo < 2800) {
+    engine.postMessage('setoption name UCI_LimitStrength value true');
+    engine.postMessage(`setoption name UCI_Elo value ${targetElo}`);
+  } else {
+    engine.postMessage('setoption name UCI_LimitStrength value false');
+  }
+
   engine.postMessage(`setoption name MultiPV value ${multipv}`);
   engine.postMessage('position fen ' + fen);
-  engine.postMessage('go movetime 100'); 
+  
+  // Give it a fixed time so it doesn't lag on mobile
+  engine.postMessage('go movetime 200'); 
 });
 
 app.listen(process.env.PORT || 3000);
