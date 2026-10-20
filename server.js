@@ -8,6 +8,14 @@ app.use(cors());
 
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_KEY;
+
+// Startup Connection Test
+console.log("Testing Supabase Connection...");
+console.log("URL starts with:", supabaseUrl ? supabaseUrl.substring(0, 15) : "MISSING");
+if (supabaseUrl && supabaseUrl.includes('/rest/v1/')) {
+    console.error("❌ ERROR: Your SUPABASE_URL contains /rest/v1/. You MUST remove it.");
+}
+
 const supabase = createClient(supabaseUrl, supabaseKey);
 
 const engine = stockfish();
@@ -54,46 +62,65 @@ app.get('/api/eval', async (req, res) => {
   if (!fen) return res.status(400).json({ error: 'No FEN' });
   if (!key) return res.status(401).json({ error: 'License key required.' });
 
-  // 1. Check Database
-  const { data, error } = await supabase
-    .from('licenses')
-    .select('expires_at, active')
-    .eq('key', key)
-    .single();
+  console.log("Checking key:", key);
 
-  if (error || !data || !data.active) {
-    return res.status(401).json({ error: 'Invalid license key.' });
-  }
+  try {
+    const { data, error } = await supabase
+      .from('licenses')
+      .select('expires_at, active')
+      .eq('key', key)
+      .single();
 
-  const expiryDate = new Date(data.expires_at);
-  if (expiryDate < new Date()) {
-    return res.status(401).json({ error: 'License expired. Please purchase a new key.' });
-  }
+    if (error) {
+      console.error("SUPABASE REJECTED:", error.message);
+      return res.status(401).json({ error: 'Supabase Error: ' + error.message });
+    }
+    
+    if (!data) {
+      console.error("KEY NOT FOUND IN DB");
+      return res.status(401).json({ error: 'Key not found in database.' });
+    }
 
-  // 2. If valid, run engine
-  if (activeResponse) {
+    if (!data.active) {
+      return res.status(401).json({ error: 'Key is disabled.' });
+    }
+
+    const expiryDate = new Date(data.expires_at);
+    if (expiryDate < new Date()) {
+      return res.status(401).json({ error: 'License expired.' });
+    }
+
+    // If valid, run engine
+    if (activeResponse) {
+      engine.postMessage('stop');
+      activeResponse.status(503).json({ error: 'Aborted' });
+    }
+
+    activeResponse = res;
+    activeResponse.locals.targetElo = targetElo;
+    variants = {};
+
     engine.postMessage('stop');
-    activeResponse.status(503).json({ error: 'Aborted' });
+    engine.postMessage('uci');
+    
+    const sfElo = Math.max(1320, targetElo);
+    if (sfElo < 2800) {
+      engine.postMessage('setoption name UCI_LimitStrength value true');
+      engine.postMessage(`setoption name UCI_Elo value ${sfElo}`);
+    } else {
+      engine.postMessage('setoption name UCI_LimitStrength value false');
+    }
+
+    engine.postMessage(`setoption name MultiPV value 5`);
+    engine.postMessage('position fen ' + fen);
+    engine.postMessage('go movetime 200'); 
+    
+  } catch (err) {
+    console.error("CRASH:", err.message);
+    res.status(500).json({ error: 'Server crash: ' + err.message });
   }
-
-  activeResponse = res;
-  activeResponse.locals.targetElo = targetElo;
-  variants = {};
-
-  engine.postMessage('stop');
-  engine.postMessage('uci');
-  
-  const sfElo = Math.max(1320, targetElo);
-  if (sfElo < 2800) {
-    engine.postMessage('setoption name UCI_LimitStrength value true');
-    engine.postMessage(`setoption name UCI_Elo value ${sfElo}`);
-  } else {
-    engine.postMessage('setoption name UCI_LimitStrength value false');
-  }
-
-  engine.postMessage(`setoption name MultiPV value 5`);
-  engine.postMessage('position fen ' + fen);
-  engine.postMessage('go movetime 200'); 
 });
 
-app.listen(process.env.PORT || 3000);
+app.listen(process.env.PORT || 3000, () => {
+  console.log("Server is running on port 3000");
+});;
