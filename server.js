@@ -64,10 +64,12 @@ app.get('/api/eval', async (req, res) => {
   engine.postMessage('stop');
   engine.postMessage('uci');
   
-  // INCREASED TO 10
+  // MUST BE 10 for the blunder engine to work
   engine.postMessage(`setoption name MultiPV value 10`);
   engine.postMessage('position fen ' + fen);
-  engine.postMessage('go movetime 200'); 
+  
+  // MUST BE 600ms for the Expected Points math to be stable
+  engine.postMessage('go movetime 600'); 
 });
 
 app.listen(process.env.PORT || 3000);
