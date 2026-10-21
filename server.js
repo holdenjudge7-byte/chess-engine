@@ -6,6 +6,7 @@ const { createClient } = require('@supabase/supabase-js');
 const app = express();
 app.use(cors());
 
+// Ensure these environment variables are set in Render!
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_KEY;
 const supabase = createClient(supabaseUrl, supabaseKey);
@@ -16,15 +17,19 @@ let variants = {};
 
 engine.onmessage = (line) => {
   if (!activeResponse || typeof line !== 'string') return;
+  
   if (line.includes('multipv') && line.includes(' pv ')) {
     const multipvMatch = line.match(/multipv (\d+)/);
     const scoreMatch = line.match(/score (cp|mate) (-?\d+)/);
     const pvMatch = line.match(/ pv (.*)/);
+    
     if (multipvMatch && scoreMatch && pvMatch) {
       const idx = parseInt(multipvMatch[1]) - 1;
       let evalScore = parseInt(scoreMatch[2]);
+      
       if (scoreMatch[1] === 'mate') evalScore = evalScore > 0 ? 100 : -100;
       else evalScore = evalScore / 100;
+      
       variants[idx] = { move: pvMatch[1].split(' ')[0], eval: evalScore };
     }
   } 
@@ -42,6 +47,7 @@ app.get('/api/eval', async (req, res) => {
   if (!fen) return res.status(400).json({ error: 'No FEN' });
   if (!key) return res.status(401).json({ error: 'License key required.' });
 
+  // 1. Validate License Key
   const { data, error } = await supabase.from('licenses').select('expires_at, active').eq('key', key).single();
 
   if (error || !data || !data.active) {
@@ -53,6 +59,7 @@ app.get('/api/eval', async (req, res) => {
     return res.status(401).json({ error: 'License expired.' });
   }
 
+  // 2. Stop any active calculation
   if (activeResponse) {
     engine.postMessage('stop');
     activeResponse.status(503).json({ error: 'Aborted' });
@@ -64,8 +71,9 @@ app.get('/api/eval', async (req, res) => {
   engine.postMessage('stop');
   engine.postMessage('uci');
   
-  // MUST BE 10 for the blunder engine to work
-  engine.postMessage(`setoption name MultiPV value 10`);
+  // MUST BE 20 for the True Blunder engine to work
+  engine.postMessage(`setoption name MultiPV value 20`);
+  
   engine.postMessage('position fen ' + fen);
   
   // MUST BE 600ms for the Expected Points math to be stable
