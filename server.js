@@ -65,9 +65,11 @@ app.get('/api/eval', async (req, res) => {
     engine.postMessage('stop');
     engine.postMessage('uci');
     
-    // OPTIMAL FOR RENDER FREE TIER
-    engine.postMessage(`setoption name MultiPV value 10`);
+    // 20 MOVES FOR THE BLUNDER ENGINE
+    engine.postMessage(`setoption name MultiPV value 20`);
     engine.postMessage('position fen ' + fen);
+    
+    // 400ms is fast enough to not lag, but deep enough to be strong
     engine.postMessage('go movetime 400'); 
   } catch (err) {
     return res.status(500).json({ error: 'Server error' });
