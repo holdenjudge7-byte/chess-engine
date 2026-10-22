@@ -42,32 +42,36 @@ app.get('/api/eval', async (req, res) => {
   if (!fen) return res.status(400).json({ error: 'No FEN' });
   if (!key) return res.status(401).json({ error: 'License key required.' });
 
-  const { data, error } = await supabase.from('licenses').select('expires_at, active').eq('key', key).single();
+  try {
+    const { data, error } = await supabase.from('licenses').select('expires_at, active').eq('key', key).single();
 
-  if (error || !data || !data.active) {
-    return res.status(401).json({ error: 'Invalid license key.' });
-  }
+    if (error || !data || !data.active) {
+      return res.status(401).json({ error: 'Invalid license key.' });
+    }
 
-  const expiryDate = new Date(data.expires_at);
-  if (expiryDate < new Date()) {
-    return res.status(401).json({ error: 'License expired.' });
-  }
+    const expiryDate = new Date(data.expires_at);
+    if (expiryDate < new Date()) {
+      return res.status(401).json({ error: 'License expired.' });
+    }
 
-  if (activeResponse) {
+    if (activeResponse) {
+      engine.postMessage('stop');
+      activeResponse.status(503).json({ error: 'Aborted' });
+    }
+
+    activeResponse = res;
+    variants = {};
+
     engine.postMessage('stop');
-    activeResponse.status(503).json({ error: 'Aborted' });
+    engine.postMessage('uci');
+    
+    // FAST AND LIGHT FOR RENDER
+    engine.postMessage(`setoption name MultiPV value 8`);
+    engine.postMessage('position fen ' + fen);
+    engine.postMessage('go movetime 250'); 
+  } catch (err) {
+    return res.status(500).json({ error: 'Server error' });
   }
-
-  activeResponse = res;
-  variants = {};
-
-  engine.postMessage('stop');
-  engine.postMessage('uci');
-  
-  // LIGHTER LOAD: 10 MultiPV, 400ms
-  engine.postMessage(`setoption name MultiPV value 10`);
-  engine.postMessage('position fen ' + fen);
-  engine.postMessage('go movetime 400'); 
 });
 
 app.listen(process.env.PORT || 3000);
