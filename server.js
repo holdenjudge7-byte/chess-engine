@@ -65,10 +65,10 @@ app.get('/api/eval', async (req, res) => {
     engine.postMessage('stop');
     engine.postMessage('uci');
     
-    // FAST AND LIGHT FOR RENDER
-    engine.postMessage(`setoption name MultiPV value 8`);
+    // OPTIMAL FOR RENDER FREE TIER
+    engine.postMessage(`setoption name MultiPV value 10`);
     engine.postMessage('position fen ' + fen);
-    engine.postMessage('go movetime 250'); 
+    engine.postMessage('go movetime 400'); 
   } catch (err) {
     return res.status(500).json({ error: 'Server error' });
   }
