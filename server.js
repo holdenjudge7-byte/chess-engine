@@ -65,12 +65,10 @@ app.get('/api/eval', async (req, res) => {
     engine.postMessage('stop');
     engine.postMessage('uci');
     
-    // 20 MOVES FOR THE BLUNDER ENGINE
-    engine.postMessage(`setoption name MultiPV value 20`);
+    // MULTIPV 7 - Max safe limit for free tier
+    engine.postMessage(`setoption name MultiPV value 7`);
     engine.postMessage('position fen ' + fen);
-    
-    // 400ms is fast enough to not lag, but deep enough to be strong
-    engine.postMessage('go movetime 400'); 
+    engine.postMessage('go movetime 200'); 
   } catch (err) {
     return res.status(500).json({ error: 'Server error' });
   }
