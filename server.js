@@ -1,4 +1,3 @@
-// server.js
 const express = require('express');
 const cors = require('cors');
 const { createClient } = require('@supabase/supabase-js');
@@ -10,7 +9,7 @@ app.use(express.json({ limit: '512kb' }));
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
-  process.env.SUPABASE_KEY   // must be the service_role / secret key
+  process.env.SUPABASE_KEY 
 );
 
 // ─── SINGLE GLOBAL ENGINE ───────────────────────────────────────────
@@ -22,9 +21,11 @@ let messageBuffer = [];
 
 function initEngine() {
   if (engine) return;
-  engine = Stockfish();
-  engine.addMessageListener((line) => {
+  engine = Stockfish(); // Stockfish 10 initializer
+  
+  engine.onmessage = (line) => {
     if (typeof line !== 'string') return;
+    
     if (line === 'uciok') {
       engine.postMessage('setoption name MultiPV value 7');
       engine.postMessage('setoption name Threads value 1');
@@ -41,7 +42,7 @@ function initEngine() {
         finishCalculation(line);
       }
     }
-  });
+  };
   engine.postMessage('uci');
 }
 
@@ -83,7 +84,7 @@ function abortEngine() {
     engineBusy = false;
     messageBuffer = [];
     if (currentResolve) {
-      currentResolve(null); // signal abort
+      currentResolve(null); 
       currentResolve = null;
     }
   }
@@ -121,17 +122,8 @@ app.post('/api/eval', async (req, res) => {
 
   const result = await new Promise((resolve) => {
     currentResolve = resolve;
-    const safety = setTimeout(() => {
-      abortEngine();
-      resolve(null);
-    }, 6000);
-
-    const originalResolve = currentResolve;
-    currentResolve = (val) => {
-      clearTimeout(safety);
-      originalResolve(val);
-    };
-
+    
+    // Stockfish 10 is fast enough that 200ms is plenty. No need for a custom timeout.
     engine.postMessage(`position fen ${fen}`);
     engine.postMessage('go movetime 200');
   });
