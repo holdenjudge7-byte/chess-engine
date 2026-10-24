@@ -27,20 +27,16 @@ engine.onmessage = (line) => {
       else evalScore = evalScore / 100;
       variants[idx] = { move: pvMatch[1].split(' ')[0], eval: evalScore };
     }
-  }
+  } 
   else if (line.startsWith('bestmove')) {
     const cleanVariants = Object.values(variants).filter(v => v);
     activeResponse.json({ variants: cleanVariants });
-    activeResponse = null;
+    activeResponse = null; 
   }
 };
 
 app.get('/health', (req, res) => {
-  res.json({
-    ok: true,
-    engine: engine ? 'stockfish-10' : 'missing',
-    uptime_s: Math.round(process.uptime())
-  });
+  res.json({ ok: true, engine: engine ? 'stockfish-10' : 'missing', uptime_s: Math.round(process.uptime()) });
 });
 
 app.get('/api/eval', async (req, res) => {
@@ -53,8 +49,14 @@ app.get('/api/eval', async (req, res) => {
   try {
     const { data, error } = await supabase.from('licenses').select('expires_at, active').eq('key', key).single();
 
-    if (error || !data || !data.active) {
-      return res.status(401).json({ error: 'Invalid license key.' });
+    // FIX: If Supabase fails to connect (cold start), send 500, NOT 401.
+    if (error) {
+      console.error('Supabase query failed:', error);
+      return res.status(500).json({ error: 'Database connection error' });
+    }
+
+    if (!data || !data.active) {
+      return res.status(401).json({ error: 'Invalid or inactive license key.' });
     }
 
     const expiryDate = new Date(data.expires_at);
@@ -72,10 +74,9 @@ app.get('/api/eval', async (req, res) => {
 
     engine.postMessage('stop');
     engine.postMessage('uci');
-
     engine.postMessage(`setoption name MultiPV value 7`);
     engine.postMessage('position fen ' + fen);
-    engine.postMessage('go movetime 200');
+    engine.postMessage('go movetime 200'); 
   } catch (err) {
     return res.status(500).json({ error: 'Server error' });
   }
