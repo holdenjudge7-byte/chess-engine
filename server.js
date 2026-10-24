@@ -1,147 +1,84 @@
 const express = require('express');
 const cors = require('cors');
+const stockfish = require('stockfish');
 const { createClient } = require('@supabase/supabase-js');
-const Stockfish = require('stockfish');
 
 const app = express();
-app.use(cors({ origin: '*' }));
-app.use(express.json({ limit: '512kb' }));
+app.use(cors());
 
-const supabase = createClient(
-  process.env.SUPABASE_URL,
-  process.env.SUPABASE_KEY 
-);
+const supabaseUrl = process.env.SUPABASE_URL;
+const supabaseKey = process.env.SUPABASE_KEY;
+const supabase = createClient(supabaseUrl, supabaseKey);
 
-// ─── SINGLE GLOBAL ENGINE ───────────────────────────────────────────
-let engine = null;
-let engineReady = false;
-let engineBusy = false;
-let currentResolve = null;
-let messageBuffer = [];
+const engine = stockfish();
+let activeResponse = null;
+let variants = {};
 
-function initEngine() {
-  if (engine) return;
-  engine = Stockfish(); // Stockfish 10 initializer
-  
-  engine.onmessage = (line) => {
-    if (typeof line !== 'string') return;
-    
-    if (line === 'uciok') {
-      engine.postMessage('setoption name MultiPV value 7');
-      engine.postMessage('setoption name Threads value 1');
-      engine.postMessage('setoption name Hash value 16');
-      engine.postMessage('isready');
-    }
-    if (line === 'readyok') {
-      engineReady = true;
-      console.log('[engine] ready – MultiPV 7, max strength');
-    }
-    if (engineBusy) {
-      messageBuffer.push(line);
-      if (line.startsWith('bestmove')) {
-        finishCalculation(line);
-      }
-    }
-  };
-  engine.postMessage('uci');
-}
-
-function finishCalculation(bestmoveLine) {
-  engineBusy = false;
-  const resolve = currentResolve;
-  currentResolve = null;
-  const lines = [...messageBuffer];
-  messageBuffer = [];
-
-  if (!resolve) return;
-
-  const pvs = [];
-  for (const l of lines) {
-    if (l.startsWith('info') && l.includes(' multipv ')) {
-      const m = l.match(/multipv (\d+)/);
-      const s = l.match(/score (cp|mate) (-?\d+)/);
-      const p = l.match(/ pv (.+)$/);
-      if (m && s && p) {
-        pvs[parseInt(m[1]) - 1] = {
-          multipv: parseInt(m[1]),
-          type: s[1],
-          score: parseInt(s[2]),
-          pv: p[1].trim()
-        };
-      }
+engine.onmessage = (line) => {
+  if (!activeResponse || typeof line !== 'string') return;
+  if (line.includes('multipv') && line.includes(' pv ')) {
+    const multipvMatch = line.match(/multipv (\d+)/);
+    const scoreMatch = line.match(/score (cp|mate) (-?\d+)/);
+    const pvMatch = line.match(/ pv (.*)/);
+    if (multipvMatch && scoreMatch && pvMatch) {
+      const idx = parseInt(multipvMatch[1]) - 1;
+      let evalScore = parseInt(scoreMatch[2]);
+      if (scoreMatch[1] === 'mate') evalScore = evalScore > 0 ? 100 : -100;
+      else evalScore = evalScore / 100;
+      variants[idx] = { move: pvMatch[1].split(' ')[0], eval: evalScore };
     }
   }
-
-  resolve({
-    bestmove: bestmoveLine.split(' ')[1] || null,
-    pvs: pvs.filter(Boolean)
-  });
-}
-
-function abortEngine() {
-  if (engine && engineBusy) {
-    engine.postMessage('stop');
-    engineBusy = false;
-    messageBuffer = [];
-    if (currentResolve) {
-      currentResolve(null); 
-      currentResolve = null;
-    }
+  else if (line.startsWith('bestmove')) {
+    const cleanVariants = Object.values(variants).filter(v => v);
+    activeResponse.json({ variants: cleanVariants });
+    activeResponse = null;
   }
-}
+};
 
-initEngine();
-
-// ─── API ────────────────────────────────────────────────────────────
-app.post('/api/eval', async (req, res) => {
-  const { fen, key } = req.body || {};
-  if (!fen || !key) {
-    return res.status(400).json({ error: 'fen and key required' });
-  }
-
-  // Auth
-  const { data: lic, error } = await supabase
-    .from('licenses')
-    .select('active, expires_at')
-    .eq('key', key)
-    .maybeSingle();
-
-  if (error || !lic || !lic.active || new Date(lic.expires_at) < new Date()) {
-    return res.status(401).json({ error: 'invalid or expired key' });
-  }
-
-  if (!engineReady) {
-    return res.status(503).json({ error: 'engine warming' });
-  }
-
-  // Abort any in-flight calculation
-  abortEngine();
-
-  engineBusy = true;
-  messageBuffer = [];
-
-  const result = await new Promise((resolve) => {
-    currentResolve = resolve;
-    
-    // Stockfish 10 is fast enough that 200ms is plenty. No need for a custom timeout.
-    engine.postMessage(`position fen ${fen}`);
-    engine.postMessage('go movetime 200');
-  });
-
-  if (!result) {
-    return res.status(504).json({ error: 'engine timeout / aborted' });
-  }
-
+app.get('/health', (req, res) => {
   res.json({
-    fen,
-    bestmove: result.bestmove,
-    pvs: result.pvs
+    ok: true,
+    engine: engine ? 'stockfish-10' : 'missing',
+    uptime_s: Math.round(process.uptime())
   });
 });
 
-app.get('/health', (_, res) => {
-  res.json({ status: 'ok', engine: engineReady, busy: engineBusy });
+app.get('/api/eval', async (req, res) => {
+  const fen = req.query.fen;
+  const key = req.query.key;
+
+  if (!fen) return res.status(400).json({ error: 'No FEN' });
+  if (!key) return res.status(401).json({ error: 'License key required.' });
+
+  try {
+    const { data, error } = await supabase.from('licenses').select('expires_at, active').eq('key', key).single();
+
+    if (error || !data || !data.active) {
+      return res.status(401).json({ error: 'Invalid license key.' });
+    }
+
+    const expiryDate = new Date(data.expires_at);
+    if (expiryDate < new Date()) {
+      return res.status(401).json({ error: 'License expired.' });
+    }
+
+    if (activeResponse) {
+      engine.postMessage('stop');
+      activeResponse.status(503).json({ error: 'Aborted' });
+    }
+
+    activeResponse = res;
+    variants = {};
+
+    engine.postMessage('stop');
+    engine.postMessage('uci');
+
+    engine.postMessage(`setoption name MultiPV value 7`);
+    engine.postMessage('position fen ' + fen);
+    engine.postMessage('go movetime 200');
+  } catch (err) {
+    return res.status(500).json({ error: 'Server error' });
+  }
 });
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Chess overlay backend :${PORT}`));
+app.listen(process.env.PORT || 3000);
