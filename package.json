@@ -1,17 +1,14 @@
 {
-  "name": "chess-overlay-backend",
+  "name": "chess-engine",
   "version": "1.0.0",
   "main": "server.js",
+  "dependencies": {
+    "express": "^4.18.2",
+    "cors": "^2.8.5",
+    "stockfish": "^10.0.2",
+    "@supabase/supabase-js": "^2.39.0"
+  },
   "scripts": {
     "start": "node server.js"
-  },
-  "dependencies": {
-    "express": "^4.21.0",
-    "cors": "^2.8.5",
-    "@supabase/supabase-js": "^2.45.4",
-    "stockfish": "^10.0.2"
-  },
-  "engines": {
-    "node": "18.x"
   }
 }
